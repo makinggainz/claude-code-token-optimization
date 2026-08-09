@@ -1,0 +1,26 @@
+{
+  "_comment": "Merge these keys into ~/.claude/settings.json. Do not replace the file; it holds your own permissions and MCP configuration. Every key here is optional.",
+
+  "_comment_hooks": "Installed by `rtk init --hook-only`, shown here so the wiring is legible. Rewrites Bash commands to their filtered equivalent before they run. Use the path rtk writes on your machine.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/rtk-rewrite.sh"
+          }
+        ]
+      }
+    ]
+  },
+
+  "_comment_env": "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH caps delegation depth. Without a cap, a subagent can delegate to a subagent, and the token cost of a single dispatch stops being predictable. 2 allows the main session to delegate and that agent to delegate once more.",
+  "env": {
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"
+  },
+
+  "_comment_effort": "Effort level applies to the main conversation. Subagents override it per definition, which is the point: the expensive setting is spent where reasoning happens and not on mechanical work. Pick this at session start rather than changing it mid-session, since changing it invalidates the prompt cache.",
+  "effortLevel": "high"
+}

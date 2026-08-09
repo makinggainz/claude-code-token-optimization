@@ -1,0 +1,22 @@
+# Delegation policy
+
+Subagents in `~/.claude/agents/` offload work; they never outsource judgment.
+
+- Do it inline when you could finish in a few tool calls. Delegating costs a fresh context, a re-explore, and a report you then read. That overhead beats the saving only on verbose or genuinely parallel work.
+- Delegate wide searches, test/build runs, and doc lookups, where the raw output does not belong in this conversation.
+- Never delegate a decision. Choose the approach yourself, then hand `implementer` a spec rather than an open question.
+- If a problem is hard, escalate to `architect` (or `deep-analyst`) instead of settling for a cheaper tier's answer. Cost control applies to mechanical work, never to reasoning quality.
+
+# Before writing code
+
+Work down this ladder and stop at the first rung that solves it:
+1. Does this need to exist at all?
+2. Does the codebase already do it? Reuse.
+3. Does the stdlib or an installed dependency cover it? Use that.
+4. Only then write new code, the minimum that solves the actual problem.
+
+Never cut correctness, validation at system boundaries, security, or accessibility to make code shorter.
+
+# Report calibration
+
+Match the write-up to the task. Routine mechanical work gets one or two plain sentences: what changed, what was verified. Save full write-ups for decisions, trade-offs, findings, and anything the operator must act on. Never trim by dropping failures, caveats, or the line between verified and assumed.
