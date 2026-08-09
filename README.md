@@ -11,7 +11,11 @@ Four layers, installed independently. Each one acts on a different part of the b
 | Policy blocks | when to delegate, when to write code, how much to report | measured indirectly through adoption and rework proxies |
 | Session hygiene | how long a session grows before it is reset | identified as the dominant driver, least automated |
 
-The headline result is not a saving. Model tiering reduced every cost component it acts on by 15% to 18% per unit of work, and net cost per unit still rose 3.8%, because session length grew 60% over the same period and cache reads are roughly two thirds of spend. That is the most useful thing in this repository: the layer most guides ignore is the one that dominates. Full method, reference results, and limitations are in [claude-code-measure-efficiency](https://github.com/makinggainz/claude-code-measure-efficiency).
+What was measured, for the one operator this data comes from: layer 1 was adopted in practice, shifted work to cheaper tiers, and reduced every cost component it acts on by 15% to 18% per unit of work. Measured rework did not get worse and by two proxies improved slightly, which is the part that matters, since a cost reduction bought with more mistakes is not a saving.
+
+The second finding is about a layer most optimization guides ignore. Cache reads, the cost of re-reading a session's own transcript on every turn, were roughly two thirds of total spend. That component is untouched by model choice and is governed almost entirely by how long a session runs before it is reset. Layer 4 is where it is addressed, and it is free.
+
+Full method, reference results, and the limitations that qualify them are in [claude-code-measure-efficiency](https://github.com/makinggainz/claude-code-measure-efficiency). The measured-period net figure and what it does and does not mean is in [What the net number showed](#what-the-net-number-showed) at the end.
 
 ## Install
 
@@ -100,7 +104,9 @@ The reason these are worth their tokens is that they act on behavior every turn,
 
 This is the largest lever and the one with the least tooling behind it.
 
-Every turn re-reads the transcript accumulated so far. Cost therefore grows with the square of session length, roughly: more turns, each re-reading more history. In the reference measurement, cache reads were 57% of cost-equivalent before and 65% after, and average session length grew from 132 to 213 turns. That growth erased a confirmed 15% to 18% reduction in every other component.
+Every turn re-reads the transcript accumulated so far. Cost therefore grows with the square of session length, roughly: more turns, each re-reading more history. In the reference measurement, cache reads were 57% of cost-equivalent in the baseline period and 65% afterward, while average session length grew from 132 to 213 turns.
+
+Session length is an operator behavior, not a property of any configuration. Nothing in layers 1 through 3 lengthens or shortens a session; the decision to keep going in an existing conversation rather than starting a fresh one is made by the person at the keyboard. That is what makes this the largest available lever: it costs nothing, requires no installation, and is entirely under your control.
 
 What follows from that:
 
@@ -143,6 +149,18 @@ Recorded because a list of what was rejected is more informative than a list of 
 - **Open verdict: knowledge-graph indexing of a repository.** One successful test, on a small codebase, where the extracted call chain verified correct against source with no fabricated edges. One test is not a verdict. The document-extraction layer produced some dangling edges while the syntax-tree layer produced none, and an unfiltered scan will attempt a vision call per image unless images are excluded first. Not recommended either way yet.
 - **Rejected: proxy-level prompt compression.** Compressing requests in transit trades output quality for tokens, and overlaps with layer 2 while being far harder to reason about when something goes wrong.
 - **Rejected: terse-speak output compression.** Instructing the model to drop articles and function words does reduce output tokens. Output tokens were the smallest component in the decomposition, and readability is the product.
+
+## What the net number showed
+
+Stated here rather than at the top, because it measures the operator as much as the configuration, and reading it as a verdict on the configuration would be a misreading.
+
+Across the measured period, net cost-equivalent per unit of work rose 3.8%. The decomposition shows where that came from. Every component model tiering acts on fell, by 15% to 18%. The single component it does not act on, cache reads, rose 19%, and because cache reads are roughly two thirds of the total, that one movement set the direction of the sum.
+
+The cache read increase tracks session length, which grew 60% over the same period. Holding cache read per unit at its baseline value and leaving every other measured change in place gives −7.0% instead. That figure is a model rather than a measurement, and it assumes session length would have been unchanged, which is an assumption and not an observation.
+
+Two things follow. The first is that this is a layer 4 problem, addressable by starting fresh sessions more often, and not evidence against layers 1 through 3. The second is a caution against reading the arithmetic too confidently in the other direction: a mechanism by which delegation indirectly lengthens sessions is not hard to imagine, since work moved into a subagent's context leaves more room in the main one. That was not tested. The measurement period also coincided with unusually long analysis sessions spent building these very scripts, which is a workload confound rather than a behavioral one.
+
+The honest summary is that the components were measured and moved as intended, the total is confounded by a concurrent behavior change, and no net saving is claimed.
 
 ## Limitations
 
