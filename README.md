@@ -1,6 +1,13 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+  <img src="assets/banner-light.svg" alt="Cost per turn climbing across a session and dropping back to zero each time the session is reset, with a dashed line showing where the same session would have gone had it never been reset.">
+</picture>
+
 # claude-code-token-optimization
 
 A configuration that reduces token consumption in Claude Code without moving reasoning to weaker models, plus the scripts to check whether it worked on your own machine.
+
+*Above: the mechanism, drawn rather than measured. Every turn re-reads the transcript so far, so cost per turn climbs and total cost is the area under it. Resetting the session sets it back to zero.*
 
 Four layers, installed independently. Each one acts on a different part of the bill:
 
