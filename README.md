@@ -1,13 +1,13 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-  <img src="assets/banner-light.svg" alt="Incoming work fanning out to four model tiers. Most of it is routed to the cheaper tiers, while a thin line still reaches the top tier for hard reasoning.">
+  <img src="assets/banner-light.svg" alt="A wide beam passing through four apertures labelled model tiering, output filtering, policy blocks and session hygiene. The beam narrows at each one while a bright core runs through all of them unchanged.">
 </picture>
 
 # claude-code-token-optimization
 
 A configuration that reduces token consumption in Claude Code without moving reasoning to weaker models, plus the scripts to check whether it worked on your own machine.
 
-*Above: the routing principle. Work goes to the cheapest tier that can do it, and the line to the top tier is thin but never cut.*
+*Above: the idea, not a result. Each layer narrows what passes through it. The core running down the middle is the reasoning, and no layer touches it.*
 
 Four layers, installed independently. Each one acts on a different part of the bill:
 
