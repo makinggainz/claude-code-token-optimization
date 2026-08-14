@@ -15,10 +15,10 @@ Usage:
     python3 session_growth.py --top 15    # rows in the largest-sessions table
 
 Peak context approximates context occupancy at the session's largest request:
-fresh input plus cache read plus cache write tokens on a single call. Subagent
-transcripts are separate files and are counted as sessions of their own, which
-matches the other scripts here. Cost-equivalent applies published API list
-rates to token counts; it is a comparison unit, not a bill.
+fresh input plus cache read plus cache write tokens on a single call. A session
+writes several transcript files, including one per subagent run; they share a
+session id and are aggregated back together here. Cost-equivalent applies
+published API list rates to token counts; it is a comparison unit, not a bill.
 """
 import argparse
 import glob
@@ -49,6 +49,42 @@ def tier_of(model):
     return "other"
 
 
+def session_meta(path):
+    """(start time, session id) for a transcript file.
+
+    Two corrections live here. File mtime is not the session start: resuming an
+    old session updates its mtime, which sorts long-lived sessions into the
+    later period and manufactures growth that did not occur. And a transcript
+    file is not a session: one session writes several files, including one per
+    subagent run, so counting files understates session length by a factor that
+    itself varies between periods. Both are bucketed from the records instead.
+    """
+    started = sid = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                if sid is None:
+                    sid = record.get("sessionId")
+                if started is None and record.get("timestamp"):
+                    try:
+                        started = (datetime
+                                   .fromisoformat(record["timestamp"].replace("Z", "+00:00"))
+                                   .astimezone().replace(tzinfo=None))
+                    except ValueError:
+                        pass
+                if started and sid:
+                    break
+    except OSError:
+        pass
+    if started is None:
+        started = datetime.fromtimestamp(os.path.getmtime(path))
+    return started, sid or path
+
+
 def percentile(sorted_values, q):
     if not sorted_values:
         return 0
@@ -63,13 +99,13 @@ def main():
     args = parser.parse_args()
 
     cutoff = datetime.now() - timedelta(days=args.days)
-    sessions = []
+    merged = {}
     for path in glob.glob(os.path.join(TRANSCRIPT_ROOT, "**", "*.jsonl"), recursive=True):
-        if datetime.fromtimestamp(os.path.getmtime(path)) < cutoff:
+        started, sid = session_meta(path)
+        if started < cutoff:
             continue
-        turns = 0
-        cost = cread_cost = 0.0
-        cread_tokens = peak = 0
+        entry = merged.setdefault(sid, {"id": str(sid)[:8], "turns": 0, "cost": 0.0,
+                                        "cread_cost": 0.0, "cread_tokens": 0, "peak": 0})
         try:
             handle = open(path, encoding="utf-8", errors="replace")
         except OSError:
@@ -84,28 +120,20 @@ def main():
                 usage = message.get("usage") or {}
                 if not usage:
                     continue
-                turns += 1
+                entry["turns"] += 1
                 rate_in, rate_out = RATES.get(tier_of(message.get("model")), (0.0, 0.0))
                 cread = usage.get("cache_read_input_tokens", 0)
                 cwrite = usage.get("cache_creation_input_tokens", 0)
                 fresh = usage.get("input_tokens", 0)
-                cread_tokens += cread
-                cread_cost += cread * rate_in * CACHE_READ_MULTIPLIER / 1e6
-                cost += (fresh * rate_in
+                entry["cread_tokens"] += cread
+                entry["cread_cost"] += cread * rate_in * CACHE_READ_MULTIPLIER / 1e6
+                entry["cost"] += (fresh * rate_in
                          + cread * rate_in * CACHE_READ_MULTIPLIER
                          + cwrite * rate_in * CACHE_WRITE_MULTIPLIER
                          + usage.get("output_tokens", 0) * rate_out) / 1e6
-                peak = max(peak, fresh + cread + cwrite)
-        if turns < MIN_TURNS:
-            continue
-        sessions.append({
-            "id": os.path.basename(path)[:8],
-            "turns": turns,
-            "cost": cost,
-            "cread_cost": cread_cost,
-            "cread_tokens": cread_tokens,
-            "peak": peak,
-        })
+                entry["peak"] = max(entry["peak"], fresh + cread + cwrite)
+
+    sessions = [s for s in merged.values() if s["turns"] >= MIN_TURNS]
 
     if not sessions:
         print("No transcripts found in the window.")

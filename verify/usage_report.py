@@ -41,17 +41,53 @@ def tier_of(model):
     return "other"
 
 
+def session_meta(path):
+    """(start time, session id) for a transcript file.
+
+    Two corrections live here. File mtime is not the session start: resuming an
+    old session updates its mtime, which sorts long-lived sessions into the
+    later period and manufactures growth that did not occur. And a transcript
+    file is not a session: one session writes several files, including one per
+    subagent run, so counting files understates session length by a factor that
+    itself varies between periods. Both are bucketed from the records instead.
+    """
+    started = sid = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                if sid is None:
+                    sid = record.get("sessionId")
+                if started is None and record.get("timestamp"):
+                    try:
+                        started = (datetime
+                                   .fromisoformat(record["timestamp"].replace("Z", "+00:00"))
+                                   .astimezone().replace(tzinfo=None))
+                    except ValueError:
+                        pass
+                if started and sid:
+                    break
+    except OSError:
+        pass
+    if started is None:
+        started = datetime.fromtimestamp(os.path.getmtime(path))
+    return started, sid or path
+
+
 def collect(cutoff):
     by_day = collections.defaultdict(lambda: collections.defaultdict(float))
     agents = collections.Counter()
-    sessions = collections.Counter()
+    sessions = collections.defaultdict(set)
 
     for path in glob.glob(os.path.join(TRANSCRIPT_ROOT, "**", "*.jsonl"), recursive=True):
-        modified = datetime.fromtimestamp(os.path.getmtime(path))
-        if modified < cutoff:
+        started, sid = session_meta(path)
+        if started < cutoff:
             continue
-        day = modified.strftime("%Y-%m-%d")
-        sessions[day] += 1
+        day = started.strftime("%Y-%m-%d")
+        sessions[day].add(sid)
         try:
             handle = open(path, encoding="utf-8", errors="replace")
         except OSError:
@@ -99,7 +135,8 @@ def summarize(title, days, by_day, sessions):
     billed_input = cache_read + cache_write + fresh_input
 
     print("\n=== %s ===" % title)
-    print("sessions: %d   days: %d" % (sum(sessions[d] for d in days), len(days)))
+    distinct = set().union(*(sessions[d] for d in days)) if days else set()
+    print("sessions: %d   days: %d" % (len(distinct), len(days)))
     print("fresh input: %8.2fM   cache read: %9.2fM   cache write: %7.2fM   output: %6.2fM"
           % (fresh_input / 1e6, cache_read / 1e6, cache_write / 1e6, output / 1e6))
     if billed_input:

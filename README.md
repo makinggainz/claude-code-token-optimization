@@ -16,11 +16,11 @@ Four layers, installed independently. Each one acts on a different part of the b
 | Model tiering | which model does which work | measured, adopted |
 | Output filtering | how much tool output enters context | self-reported by the tool, not independently measured |
 | Policy blocks | when to delegate, when to write code, how much to report | measured indirectly through adoption and rework proxies |
-| Session hygiene | how long a session grows before it is reset | identified as the dominant driver, least automated |
+| Session hygiene | how long a session grows before it is reset | plausible, not demonstrated by this data |
 
-What was measured, for the one operator this data comes from: layer 1 was adopted in practice, shifted work to cheaper tiers, and reduced every cost component it acts on by 15% to 18% per unit of work. Measured rework did not get worse and by two proxies improved slightly, which is the part that matters, since a cost reduction bought with more mistakes is not a saving.
+What was measured, for the one operator this data comes from: layer 1 was adopted in practice and displaced the built-in search agent, shifting work to cheaper tiers. Output tokens per unit of work fell 19% and fresh input fell to almost nothing, while cache writes did not move. Measured rework improved rather than degraded, which is the part that matters, since a cost reduction bought with more mistakes is not a saving.
 
-The second finding is about a layer most optimization guides ignore. Cache reads, the cost of re-reading a session's own transcript on every turn, were roughly two thirds of total spend. That component is untouched by model choice and is governed almost entirely by how long a session runs before it is reset. Layer 4 is where it is addressed, and it is free.
+The second finding is about a component most optimization guides ignore. Cache reads, the cost of re-reading a session's own transcript on every turn, were roughly 60% of total spend and rose 12% per unit of work over the measurement period. Model choice does not touch that component. An earlier version of this repository attributed the rise to sessions getting longer; that turned out to be a measurement artifact and the claim was withdrawn. The cause is currently unidentified.
 
 Full method, reference results, and the limitations that qualify them are in [claude-code-measure-efficiency](https://github.com/makinggainz/claude-code-measure-efficiency). The measured-period net figure and what it does and does not mean is in [What the net number showed](#what-the-net-number-showed) at the end.
 
@@ -68,9 +68,9 @@ The principle is that work whose failure mode is cheap and immediately visible r
 
 Two design notes the adoption data supports.
 
-`scout` exists because the built-in Explore agent inherits the main conversation's model, so unguided searching runs at the main model's rate. A cheap-tier alternative with an explicit description displaced it: Explore dispatches fell from 46 to 8 after installation.
+`scout` exists because the built-in Explore agent inherits the main conversation's model, so unguided searching runs at the main model's rate. A cheap-tier alternative with an explicit description displaced it: Explore dispatches fell from 43 to 8 after installation.
 
-The set is deliberately small. Large agent libraries create overlapping descriptions, and the routing model selects by matching a task against those descriptions. These seven were selected in 47% of dispatches where the prior state was 1%. Curation appears to matter more than coverage.
+The set is deliberately small. Large agent libraries create overlapping descriptions, and the routing model selects by matching a task against those descriptions. These seven were selected in 70% of dispatches where the prior state was 2%. Curation appears to matter more than coverage.
 
 There is a second effect that is easy to miss. A subagent runs in its own context, so its tokens never enter the main conversation and never become part of the transcript that is re-read on every subsequent turn. Delegating a verbose search is therefore worth more than the tier difference alone suggests.
 
@@ -93,7 +93,7 @@ The pathological cases compress the most, and contribute the least. Almost half 
 
 Two honest caveats. These percentages are the tool's own accounting, comparing raw output to filtered output; they are not measured through Claude Code transcripts, and no independent verification is offered here. And filtering is lossy by design, so a filtered output can omit the one line that mattered; treat `rtk proxy <cmd>` as the escape hatch when a result looks wrong.
 
-This layer compounds with layer 4. Output that never enters the transcript is not merely cheap once; it is absent from every future cache read in that session.
+This layer compounds with the mechanism behind layer 4. Output that never enters the transcript is not merely cheap once; it is absent from every future cache read in that session.
 
 ## Layer 3: policy blocks
 
@@ -109,17 +109,17 @@ The reason these are worth their tokens is that they act on behavior every turn,
 
 ## Layer 4: session hygiene
 
-This is the largest lever and the one with the least tooling behind it.
+This layer rests on a mechanism rather than on a measured result, and the distinction matters.
 
-Every turn re-reads the transcript accumulated so far. Cost therefore grows with the square of session length, roughly: more turns, each re-reading more history. In the reference measurement, cache reads were 57% of cost-equivalent in the baseline period and 65% afterward, while average session length grew from 132 to 213 turns.
+The mechanism is real and is not in dispute. Every turn re-reads the transcript accumulated so far, so the cost of a session grows with roughly the square of its length: more turns, each re-reading more history. Cache reads were about 60% of cost-equivalent in both periods measured, which is what makes the mechanism worth caring about at all.
 
-Session length is an operator behavior, not a property of any configuration. Nothing in layers 1 through 3 lengthens or shortens a session; the decision to keep going in an existing conversation rather than starting a fresh one is made by the person at the keyboard. That is what makes this the largest available lever: it costs nothing, requires no installation, and is entirely under your control.
+What this data does **not** show is that resetting sessions more often would have helped the operator it came from. An earlier version of this repository claimed session length grew 60% over the measurement period and that this drove the cost increase. Correct bucketing showed session length fell about 7%, and the claim was withdrawn. Cache read per turn still rose 14%, and the cause is unidentified: fixed per-turn overhead was flat to within 1%, so it is not instruction or tool-definition bloat either.
 
-What follows from that:
+Session length remains an operator behavior rather than a property of any configuration. Nothing in layers 1 through 3 lengthens or shortens a session. The advice below is sound because the mechanism is sound, and it is free to follow, but treat it as reasoning rather than as a demonstrated saving:
 
 - **Start a new session when the task changes.** A finished task's transcript is pure cost on every subsequent turn. `/clear` is free and instant.
 - **Do not switch model or effort mid-session.** Either invalidates the prompt cache, forcing a full re-read at the uncached rate. Choose at session start. A subagent's model never touches the parent's cache, which is another reason to delegate rather than switch.
-- **Watch where the cost actually concentrates.** In one 7-day sample, the top 10% of sessions by cost held 65% of total cost-equivalent, and sessions above the 90th percentile in length held 70% of all cache read cost. A small number of runaway sessions dominate.
+- **Watch where the cost actually concentrates.** In one 40-day sample, the top 10% of sessions by cost held 47% of total cost-equivalent, and sessions above the 90th percentile in length held 50% of all cache read cost. A small number of long sessions carry a large share of the bill, which is a fact about distribution rather than evidence that shortening them would have saved money.
 
 `verify/session_growth.py` reports exactly this, per session, so runaway sessions are visible rather than inferred.
 
@@ -159,15 +159,15 @@ Recorded because a list of what was rejected is more informative than a list of 
 
 ## What the net number showed
 
-Stated here rather than at the top, because it measures the operator as much as the configuration, and reading it as a verdict on the configuration would be a misreading.
+Stated here rather than at the top, because a single net figure hides more than it reveals, and because part of what it originally showed turned out to be a measurement error.
 
-Across the measured period, net cost-equivalent per unit of work rose 3.8%. The decomposition shows where that came from. Every component model tiering acts on fell, by 15% to 18%. The single component it does not act on, cache reads, rose 19%, and because cache reads are roughly two thirds of the total, that one movement set the direction of the sum.
+Across the measured period, net cost-equivalent per unit of work rose 4.1%. The decomposition shows where that came from. Output tokens, the component most exposed to model tiering, fell 19%. Fresh input fell 91%. Cache writes did not move. Cache reads, which model tiering does not act on, rose 12%, and because they are roughly 60% of the total, that one movement set the direction of the sum.
 
-The cache read increase tracks session length, which grew 60% over the same period. Holding cache read per unit at its baseline value and leaving every other measured change in place gives −7.0% instead. That figure is a model rather than a measurement, and it assumes session length would have been unchanged, which is an assumption and not an observation.
+Holding cache read per unit at its baseline value and leaving every other measured change in place gives −3.0% instead. That is a model rather than a measurement.
 
-Two things follow. The first is that this is a layer 4 problem, addressable by starting fresh sessions more often, and not evidence against layers 1 through 3. The second is a caution against reading the arithmetic too confidently in the other direction: a mechanism by which delegation indirectly lengthens sessions is not hard to imagine, since work moved into a subagent's context leaves more room in the main one. That was not tested. The measurement period also coincided with unusually long analysis sessions spent building these very scripts, which is a workload confound rather than a behavioral one.
+**Why cache reads rose is not known.** The first published version of this repository said session length grew 60% and drove the increase. That was wrong: sessions were being bucketed by file modification time, which sorts long-lived sessions into the later period, and transcript files were being counted as sessions when one session writes several. Corrected, session length fell about 7%. A second candidate, growth in the fixed overhead every turn re-reads, was then tested and also failed: it moved 1%. What is left is that each turn added more transcript than before at an unchanged turn count, and this dataset does not say why.
 
-The honest summary is that the components were measured and moved as intended, the total is confounded by a concurrent behavior change, and no net saving is claimed.
+Two things follow. The first is that layers 1 through 3 did what they were built to do on the components they touch, and the net figure is not evidence against them. The second is that this repository cannot currently tell you where the remaining 12% went, and says so rather than reaching for the nearest plausible story. The correction log is in the [measurement repository](https://github.com/makinggainz/claude-code-measure-efficiency#correction).
 
 ## Limitations
 
@@ -177,6 +177,8 @@ The honest summary is that the components were measured and moved as intended, t
 4. The verification scripts parse an undocumented internal transcript format. Format changes will break them.
 5. Output tokens are used as the proxy for work produced. A refactor and a long explanation are not equivalent work at equal token counts.
 6. Friction metrics measure friction, not correctness. Nothing here measures whether the output was right.
+7. The reference figures were corrected on 2026-08-14 after two period-assignment defects were found. Numbers published before that date, including a claim that session length grew 60%, should not be relied on.
+8. Layer 4 is reasoning from a mechanism, not a measured result. It is free to follow and the mechanism is sound, but this data does not demonstrate that it would have saved this operator money.
 
 ## License
 

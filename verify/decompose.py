@@ -39,6 +39,42 @@ def tier_of(model):
     return "other"
 
 
+def session_meta(path):
+    """(start time, session id) for a transcript file.
+
+    Two corrections live here. File mtime is not the session start: resuming an
+    old session updates its mtime, which sorts long-lived sessions into the
+    later period and manufactures growth that did not occur. And a transcript
+    file is not a session: one session writes several files, including one per
+    subagent run, so counting files understates session length by a factor that
+    itself varies between periods. Both are bucketed from the records instead.
+    """
+    started = sid = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                if sid is None:
+                    sid = record.get("sessionId")
+                if started is None and record.get("timestamp"):
+                    try:
+                        started = (datetime
+                                   .fromisoformat(record["timestamp"].replace("Z", "+00:00"))
+                                   .astimezone().replace(tzinfo=None))
+                    except ValueError:
+                        pass
+                if started and sid:
+                    break
+    except OSError:
+        pass
+    if started is None:
+        started = datetime.fromtimestamp(os.path.getmtime(path))
+    return started, sid or path
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -47,12 +83,12 @@ def main():
 
     totals = collections.defaultdict(lambda: collections.defaultdict(float))
     turns = collections.Counter()
-    sessions = collections.Counter()
+    sessions = collections.defaultdict(set)
 
     for path in glob.glob(os.path.join(TRANSCRIPT_ROOT, "**", "*.jsonl"), recursive=True):
-        modified = datetime.fromtimestamp(os.path.getmtime(path))
-        period = "AFTER" if modified >= split else "BEFORE"
-        sessions[period] += 1
+        started, sid = session_meta(path)
+        period = "AFTER" if started >= split else "BEFORE"
+        sessions[period].add(sid)
         try:
             handle = open(path, encoding="utf-8", errors="replace")
         except OSError:
@@ -106,7 +142,7 @@ def main():
     print("\nWORKLOAD SHAPE")
     print("%-22s%10s%10s" % ("", "BEFORE", "AFTER"))
     print("%-22s%10.1f%10.1f" % ("turns per session",
-                                 turns["BEFORE"] / sessions["BEFORE"], turns["AFTER"] / sessions["AFTER"]))
+                                 turns["BEFORE"] / len(sessions["BEFORE"]), turns["AFTER"] / len(sessions["AFTER"])))
     print("%-22s%10.2f%10.2f" % ("cache read M per turn",
                                  totals["BEFORE"]["cache_read_tokens"] / turns["BEFORE"] / 1e6,
                                  totals["AFTER"]["cache_read_tokens"] / turns["AFTER"] / 1e6))

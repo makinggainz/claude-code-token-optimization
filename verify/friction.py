@@ -39,6 +39,43 @@ CORRECTION = re.compile(
 MIN_TURNS = 3  # ignore trivial sessions
 
 
+def session_meta(path):
+    """(start time, session id) for a transcript file.
+
+    Two corrections live here. File mtime is not the session start: resuming an
+    old session updates its mtime, which sorts long-lived sessions into the
+    later period and manufactures growth that did not occur. And a transcript
+    file is not a session: one session writes several files, including one per
+    subagent run, so counting files understates session length by a factor that
+    itself varies between periods. Both are bucketed from the records instead.
+    """
+    started = sid = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                if sid is None:
+                    sid = record.get("sessionId")
+                if started is None and record.get("timestamp"):
+                    try:
+                        started = (datetime
+                                   .fromisoformat(record["timestamp"].replace("Z", "+00:00"))
+                                   .astimezone().replace(tzinfo=None))
+                    except ValueError:
+                        pass
+                if started and sid:
+                    break
+    except OSError:
+        pass
+    if started is None:
+        started = datetime.fromtimestamp(os.path.getmtime(path))
+    return started, sid or path
+
+
+
 def human_text(content):
     if isinstance(content, str):
         return content
@@ -55,10 +92,11 @@ def main():
     split = datetime.strptime(sys.argv[1], "%Y-%m-%d")
 
     stats = collections.defaultdict(collections.Counter)
+    session_ids = collections.defaultdict(set)
 
     for path in glob.glob(os.path.join(TRANSCRIPT_ROOT, "**", "*.jsonl"), recursive=True):
-        modified = datetime.fromtimestamp(os.path.getmtime(path))
-        period = "AFTER" if modified >= split else "BEFORE"
+        started, sid = session_meta(path)
+        period = "AFTER" if started >= split else "BEFORE"
         tool_calls = tool_errors = human_turns = corrections = assistant_turns = 0
         cache_read = 0
         edits = collections.Counter()
@@ -98,7 +136,7 @@ def main():
         if assistant_turns < MIN_TURNS:
             continue
         bucket = stats[period]
-        bucket["sessions"] += 1
+        session_ids[period].add(sid)
         bucket["tool_calls"] += tool_calls
         bucket["tool_errors"] += tool_errors
         bucket["human_turns"] += human_turns
@@ -107,6 +145,9 @@ def main():
         bucket["cache_read"] += cache_read
         bucket["edits"] += sum(edits.values())
         bucket["churn"] += sum(v - 1 for v in edits.values() if v > 1)
+
+    for period, ids in session_ids.items():
+        stats[period]["sessions"] = len(ids)
 
     if not stats.get("BEFORE") or not stats.get("AFTER"):
         print("Need transcripts on both sides of the split date.")
