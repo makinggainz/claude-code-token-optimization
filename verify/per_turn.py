@@ -34,14 +34,24 @@ import os
 import sys
 from datetime import datetime
 
-RATES = {
-    "fable": (10.0, 50.0),
-    "opus": (5.0, 25.0),
-    "sonnet": (3.0, 15.0),
-    "haiku": (1.0, 5.0),
-}
-CACHE_READ_MULTIPLIER = 0.1
-CACHE_WRITE_MULTIPLIER = 1.25
+# USD per million tokens (input, output, cache read), matched by model id
+# prefix, most specific first. Cache read is priced per model because it is not
+# a fixed multiple of input: Fable 5.1 reads at 0.025x and Opus 5.5 at 0.05x.
+# Update when list prices change.
+RATES = [
+    ("claude-fable-5-1", (10.0, 50.0, 0.25)),
+    ("claude-fable", (10.0, 50.0, 1.0)),
+    ("claude-opus-5-5", (4.0, 20.0, 0.20)),
+    ("claude-opus", (5.0, 25.0, 0.50)),
+    ("claude-sonnet-5", (2.0, 10.0, 0.20)),
+    ("claude-sonnet", (3.0, 15.0, 0.30)),
+    ("claude-haiku", (1.0, 5.0, 0.10)),
+]
+TIERS = ("fable", "opus", "sonnet", "haiku")
+# Cache writes, as multiples of the input rate. Claude Code writes mostly with
+# the 1-hour TTL. Records without the TTL breakdown are priced as 5-minute.
+CACHE_WRITE_5M_MULTIPLIER = 1.25
+CACHE_WRITE_1H_MULTIPLIER = 2.0
 
 TRANSCRIPT_ROOT = os.path.expanduser("~/.claude/projects")
 BANDS = [(1, 25), (26, 50), (51, 100), (101, 200), (201, 400), (401, 800),
@@ -49,12 +59,21 @@ BANDS = [(1, 25), (26, 50), (51, 100), (101, 200), (201, 400), (401, 800),
 MIN_TURNS_PER_BAND = 30
 
 
-def tier_of(model):
+def rates_of(model):
+    """(input, output, cache read) in USD per million tokens."""
     name = (model or "").lower()
-    for tier in RATES:
-        if tier in name:
-            return tier
-    return "other"
+    for prefix, rates in RATES:
+        if name.startswith(prefix):
+            return rates
+    return 0.0, 0.0, 0.0
+
+
+def cache_write_cost(usage, rate_in):
+    """USD for one message's cache writes, split by TTL where the record has it."""
+    total = usage.get("cache_creation_input_tokens", 0)
+    long_ttl = (usage.get("cache_creation") or {}).get("ephemeral_1h_input_tokens", 0)
+    return ((total - long_ttl) * CACHE_WRITE_5M_MULTIPLIER
+            + long_ttl * CACHE_WRITE_1H_MULTIPLIER) * rate_in / 1e6
 
 
 def session_meta(path):
@@ -93,11 +112,11 @@ def band_of(depth):
 
 
 def cost_of(usage, model):
-    rate_in, rate_out = RATES.get(tier_of(model), (0.0, 0.0))
-    return (usage.get("input_tokens", 0) * rate_in
-            + usage.get("cache_read_input_tokens", 0) * rate_in * CACHE_READ_MULTIPLIER
-            + usage.get("cache_creation_input_tokens", 0) * rate_in * CACHE_WRITE_MULTIPLIER
-            + usage.get("output_tokens", 0) * rate_out) / 1e6
+    rate_in, rate_out, rate_read = rates_of(model)
+    return ((usage.get("input_tokens", 0) * rate_in
+             + usage.get("cache_read_input_tokens", 0) * rate_read
+             + usage.get("output_tokens", 0) * rate_out) / 1e6
+            + cache_write_cost(usage, rate_in))
 
 
 def main():

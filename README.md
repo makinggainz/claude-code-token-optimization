@@ -148,7 +148,7 @@ These scripts are copies of the tooling in [claude-code-measure-efficiency](http
 
 ## Cost-equivalent is not a bill
 
-The scripts apply published API list rates to observed token counts. On a subscription the amount paid is fixed regardless. Cost-equivalent is a unit for comparing one period against another, and it is meaningless as an absolute. Rates are constants at the top of each script and need updating when list prices change.
+The scripts apply published API list rates to observed token counts. On a subscription the amount paid is fixed regardless. Cost-equivalent is a unit for comparing one period against another, and it is meaningless as an absolute. Rates are constants at the top of each script and need updating when list prices change. Each model has its own input, output and cache read rate, and cache writes are priced by TTL (1.25x input for 5 minutes, 2x for 1 hour). The figures under [What the numbers showed](#what-the-numbers-showed) came from an earlier version with flat multipliers and have not been recomputed.
 
 ## Evaluated and not adopted
 
