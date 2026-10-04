@@ -59,7 +59,7 @@ The principle is that work whose failure mode is cheap and immediately visible r
 | Agent | Model | Purpose |
 |---|---|---|
 | `deep-analyst` | top tier | Escalation only. Problems that already resisted a serious attempt. |
-| `architect` | high tier | Design decisions and difficult debugging. Read-only, returns a plan. |
+| `architect` | high tier | Design decisions and difficult debugging. Read-only, returns a plan. On a main session already at this tier it adds a separate context, not a stronger model. |
 | `implementer` | mid tier | Executes an already-decided specification. |
 | `test-runner` | mid tier | Runs verbose commands, reports only failures. Never fixes. |
 | `scout` | low tier | Read-only code and file discovery. |

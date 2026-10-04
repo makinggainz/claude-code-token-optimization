@@ -21,6 +21,9 @@
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"
   },
 
+  "_comment_cleanup": "Claude Code deletes session transcripts after 30 days by default. The verify/ scripts read those transcripts, so a before/after comparison silently loses its baseline once it ages out. 90 keeps enough history to measure a change against the period before it.",
+  "cleanupPeriodDays": 90,
+
   "_comment_effort": "Effort level applies to the main conversation. Subagents override it per definition, which is the point: the expensive setting is spent where reasoning happens and not on mechanical work. Pick this at session start rather than changing it mid-session, since changing it invalidates the prompt cache.",
   "effortLevel": "high"
 }

@@ -1,7 +1,7 @@
 ---
 name: architect
-description: Read-only deep analysis on Opus for genuinely hard problems — system design decisions, tricky debugging where the cause is not obvious, evaluating trade-offs between approaches, or untangling how an unfamiliar subsystem actually works. This is the expensive tier: reach for it when the reasoning is the hard part, not the typing. It never edits files; it returns a plan or a diagnosis for someone else to execute.
-model: opus
+description: Read-only deep analysis on Opus 5.5 for hard problems that need a lot of reading — system design decisions, tricky debugging where the cause is not obvious, evaluating trade-offs between approaches, or untangling how an unfamiliar subsystem actually works. If the main session already runs on Opus, this buys a fresh context that keeps the reading out of the main conversation, not a smarter answer; for a stronger model, escalate to deep-analyst. It never edits files; it returns a plan or a diagnosis for someone else to execute.
+model: claude-opus-5-5
 effort: high
 maxTurns: 30
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
