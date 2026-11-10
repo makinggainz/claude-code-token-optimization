@@ -39,8 +39,10 @@ cat CLAUDE.md.example >> ~/.claude/CLAUDE.md   # layer 3
 For layer 2, install [rtk](https://github.com/rtk-ai/rtk) and let it wire its own hook:
 
 ```bash
-rtk init --hook-only
+rtk init -g --hook-only
 ```
+
+On rtk 1.x the hook is the command `rtk hook claude`; confirm it with `/hooks` in Claude Code. When upgrading from rtk 0.x, check this after `rtk init`: the old `rtk-rewrite.sh` script stops rewriting under 1.x, because `rtk rewrite` now exits 3 when it has a rewrite, and the migration removes the old entry from `settings.json`. A missing entry fails silently, with Bash output simply unfiltered. Upgrading is worth it for a second reason: 0.x `rtk read` dropped code comments from files it printed, and 1.x prints them whole.
 
 Then merge the relevant keys from [`settings.json.example`](settings.json.example) into `~/.claude/settings.json`.
 
