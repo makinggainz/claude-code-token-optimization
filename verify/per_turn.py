@@ -39,14 +39,21 @@ from datetime import datetime
 # a fixed multiple of input: Fable 5.1 reads at 0.025x and Opus 5.5 at 0.05x.
 # Update when list prices change.
 RATES = [
+    ("claude-fable-5-2", (8.0, 40.0, 0.20)),
     ("claude-fable-5-1", (10.0, 50.0, 0.25)),
     ("claude-fable", (10.0, 50.0, 1.0)),
     ("claude-opus-5-5", (4.0, 20.0, 0.20)),
     ("claude-opus", (5.0, 25.0, 0.50)),
+    ("claude-sonnet-5-5", (2.0, 10.0, 0.10)),
     ("claude-sonnet-5", (2.0, 10.0, 0.20)),
     ("claude-sonnet", (3.0, 15.0, 0.30)),
+    ("claude-haiku-5-5", (0.10, 0.50, 0.01)),
     ("claude-haiku", (1.0, 5.0, 0.10)),
 ]
+# Haiku 5.5 is priced by prompt size. The row above covers prompts up to
+# 100,000 tokens; a longer prompt bills every token at these rates instead.
+HAIKU_5_5_LONG = (0.50, 2.50, 0.05)
+LONG_PROMPT_TOKENS = 100_000
 TIERS = ("fable", "opus", "sonnet", "haiku")
 # Cache writes, as multiples of the input rate. Claude Code writes mostly with
 # the 1-hour TTL. Records without the TTL breakdown are priced as 5-minute.
@@ -59,9 +66,18 @@ BANDS = [(1, 25), (26, 50), (51, 100), (101, 200), (201, 400), (401, 800),
 MIN_TURNS_PER_BAND = 30
 
 
-def rates_of(model):
+def prompt_tokens(usage):
+    """Input side of one request: fresh input plus cache reads and cache writes."""
+    usage = usage or {}
+    return (usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+            + usage.get("cache_creation_input_tokens", 0))
+
+
+def rates_of(model, usage=None):
     """(input, output, cache read) in USD per million tokens."""
     name = (model or "").lower()
+    if name.startswith("claude-haiku-5-5") and prompt_tokens(usage) > LONG_PROMPT_TOKENS:
+        return HAIKU_5_5_LONG
     for prefix, rates in RATES:
         if name.startswith(prefix):
             return rates
@@ -74,6 +90,26 @@ def cache_write_cost(usage, rate_in):
     long_ttl = (usage.get("cache_creation") or {}).get("ephemeral_1h_input_tokens", 0)
     return ((total - long_ttl) * CACHE_WRITE_5M_MULTIPLIER
             + long_ttl * CACHE_WRITE_1H_MULTIPLIER) * rate_in / 1e6
+
+
+def first_sighting(record, seen):
+    """True the first time a request's usage appears.
+
+    Claude Code writes one transcript record per content block (thinking, text,
+    each tool call), and every one of them repeats the full usage of the
+    response. Summing usage per record counts each request two to three times.
+    A request is identified by its message id and request id, across all files,
+    since a forked or resumed session can copy earlier records. Records that
+    carry neither id are kept.
+    """
+    message = record.get("message") or {}
+    key = (message.get("id"), record.get("requestId"))
+    if key == (None, None):
+        return True
+    if key in seen:
+        return False
+    seen.add(key)
+    return True
 
 
 def session_meta(path):
@@ -112,7 +148,7 @@ def band_of(depth):
 
 
 def cost_of(usage, model):
-    rate_in, rate_out, rate_read = rates_of(model)
+    rate_in, rate_out, rate_read = rates_of(model, usage)
     return ((usage.get("input_tokens", 0) * rate_in
              + usage.get("cache_read_input_tokens", 0) * rate_read
              + usage.get("output_tokens", 0) * rate_out) / 1e6
@@ -133,6 +169,7 @@ def main():
     cost = collections.defaultdict(lambda: collections.defaultdict(float))
     output = collections.defaultdict(lambda: collections.defaultdict(float))
     turns = collections.defaultdict(collections.Counter)
+    seen = set()
 
     for parts in sessions.values():
         parts.sort()
@@ -151,7 +188,7 @@ def main():
                         continue
                     message = record.get("message") or {}
                     usage = message.get("usage") or {}
-                    if not usage:
+                    if not usage or not first_sighting(record, seen):
                         continue
                     if not record.get("isSidechain"):
                         depth += 1

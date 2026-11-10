@@ -39,6 +39,26 @@ CORRECTION = re.compile(
 MIN_TURNS = 3  # ignore trivial sessions
 
 
+def first_sighting(record, seen):
+    """True the first time a request's usage appears.
+
+    Claude Code writes one transcript record per content block (thinking, text,
+    each tool call), and every one of them repeats the full usage of the
+    response. Summing usage per record counts each request two to three times.
+    A request is identified by its message id and request id, across all files,
+    since a forked or resumed session can copy earlier records. Records that
+    carry neither id are kept.
+    """
+    message = record.get("message") or {}
+    key = (message.get("id"), record.get("requestId"))
+    if key == (None, None):
+        return True
+    if key in seen:
+        return False
+    seen.add(key)
+    return True
+
+
 def session_meta(path):
     """(start time, session id) for a transcript file.
 
@@ -93,6 +113,7 @@ def main():
 
     stats = collections.defaultdict(collections.Counter)
     session_ids = collections.defaultdict(set)
+    seen = set()
 
     for path in glob.glob(os.path.join(TRANSCRIPT_ROOT, "**", "*.jsonl"), recursive=True):
         started, sid = session_meta(path)
@@ -112,7 +133,7 @@ def main():
                     continue
                 message = record.get("message") or {}
                 content = message.get("content")
-                if record.get("type") == "assistant":
+                if record.get("type") == "assistant" and first_sighting(record, seen):
                     assistant_turns += 1
                     cache_read += (message.get("usage") or {}).get("cache_read_input_tokens", 0)
                 if record.get("type") == "user":
